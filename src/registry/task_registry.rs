@@ -22,7 +22,7 @@ pub trait TaskRegistry {
     fn get_tasks<'a>(
         self: &'a Self,
         statuses: &'a HashSet<TaskStatus>,
-    ) -> Box<dyn Iterator<Item = &TaskState> + 'a>;
+    ) -> Box<dyn Iterator<Item = TaskState> + 'a>;
 }
 
 pub struct InMemoryTaskRegistry {
@@ -61,11 +61,12 @@ impl TaskRegistry for InMemoryTaskRegistry {
     fn get_tasks<'a>(
         self: &'a Self,
         statuses: &'a HashSet<TaskStatus>,
-    ) -> Box<dyn Iterator<Item = &TaskState> + 'a> {
+    ) -> Box<dyn Iterator<Item = TaskState> + 'a> {
         Box::new(
             self.tasks
                 .values()
-                .filter(|state| statuses.contains(&state.status)),
+                .filter(|state| statuses.contains(&state.status))
+                .map(|task_state| task_state.clone()),
         )
     }
 }

@@ -25,9 +25,9 @@ impl ControlLoop<'_> {
         non_terminal_statuses.insert(TaskStatus::RUNNING);
         for task in self.registry.get_tasks(&non_terminal_statuses) {
             if task.status == TaskStatus::PENDING {
-                self.advance_pending(task)
+                self.advance_pending(&task)
             } else if task.status == TaskStatus::RUNNING {
-                self.advance_running(task)
+                self.advance_running(&task)
             } else {
                 panic!("Unexected status {}", task.status.to_string())
             }
