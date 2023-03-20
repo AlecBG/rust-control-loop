@@ -139,7 +139,6 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
             Vec::from_iter(statuses.into_iter().map(|_x| "?".to_string())).join(", ");
         let table_name = &self.table_name;
         let query = format!("SELECT * FROM {table_name} WHERE status in ({question_marks})");
-        println!("{}", &query);
         let mut statement = self.connection.prepare(query).unwrap();
         statement
             .bind_iter::<_, (usize, sqlite::Value)>(
@@ -180,15 +179,38 @@ impl Drop for TaskRegistrySqlite {
 #[cfg(test)]
 mod tests {
     use crate::core::core_types::{TaskDefinition, TaskState, TaskStatus};
-    use crate::registry::task_registry::TaskRegistry;
+    use crate::registry::task_registry::{InMemoryTaskRegistry, TaskRegistry};
     use crate::registry::task_registry_sqlite::{TablePermanance, TaskRegistrySqlite};
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
+
+    use rstest::*;
 
     const DATABASE_NAME: &str = ":memory:";
     const TABLE_NAME: &str = "test_table";
 
-    #[test]
-    fn get_and_write_to_database() {
+    #[derive(PartialEq)]
+    enum RegistryType {
+        Sqlite,
+        InMemory,
+    }
+
+    fn make_registry(registry_type: RegistryType) -> Box<dyn TaskRegistry> {
+        if registry_type == RegistryType::Sqlite {
+            let registry =
+                TaskRegistrySqlite::new(DATABASE_NAME, TABLE_NAME, TablePermanance::DropOnClose);
+            Box::new(registry)
+        } else {
+            let registry = InMemoryTaskRegistry::new(HashMap::new());
+            Box::new(registry)
+        }
+    }
+
+    #[rstest]
+    #[case(RegistryType::Sqlite)]
+    #[case(RegistryType::InMemory)]
+    fn get_and_write_to_database(#[case] registry_type: RegistryType) {
+        let mut registry_box = make_registry(registry_type);
+        let registry = registry_box.as_mut();
         let task_definition1 = TaskDefinition {
             message: "hello from task 1".to_string(),
             sleep_time_seconds: 4,
@@ -197,8 +219,6 @@ mod tests {
             message: "hello from task 2".to_string(),
             sleep_time_seconds: 6,
         };
-        let mut registry =
-            TaskRegistrySqlite::new(DATABASE_NAME, TABLE_NAME, TablePermanance::DropOnClose);
         let task1_id = "Task 1";
         let task2_id = "Task 2";
         registry.create_task(task1_id, &task_definition1);
@@ -209,14 +229,16 @@ mod tests {
         assert_eq!(TaskState::new(task2_id, &task_definition2), retrieved_task2);
     }
 
-    #[test]
-    fn update_element_in_database() {
+    #[rstest]
+    #[case(RegistryType::Sqlite)]
+    #[case(RegistryType::InMemory)]
+    fn update_element_in_database(#[case] registry_type: RegistryType) {
+        let mut registry_box = make_registry(registry_type);
+        let registry = registry_box.as_mut();
         let task_definition = TaskDefinition {
             message: "hello from task 1".to_string(),
             sleep_time_seconds: 4,
         };
-        let mut registry =
-            TaskRegistrySqlite::new(DATABASE_NAME, TABLE_NAME, TablePermanance::DropOnClose);
         let task_id = "my task";
         registry.create_task(task_id, &task_definition);
         let retrieved_task = registry.get_task(task_id).unwrap();
@@ -226,8 +248,12 @@ mod tests {
         assert_eq!(retrieved_task_after_update.status, TaskStatus::RUNNING);
     }
 
-    #[test]
-    fn list_by_statuses() {
+    #[rstest]
+    #[case(RegistryType::Sqlite)]
+    #[case(RegistryType::InMemory)]
+    fn list_by_statuses(#[case] registry_type: RegistryType) {
+        let mut registry_box = make_registry(registry_type);
+        let registry = registry_box.as_mut();
         let task_definition1 = TaskDefinition {
             message: "hello from task 1".to_string(),
             sleep_time_seconds: 4,
@@ -236,8 +262,6 @@ mod tests {
             message: "hello from task 2".to_string(),
             sleep_time_seconds: 6,
         };
-        let mut registry =
-            TaskRegistrySqlite::new(DATABASE_NAME, TABLE_NAME, TablePermanance::DropOnClose);
         let task1_id = "Task 1";
         let task2_id = "Task 2";
         registry.create_task(task1_id, &task_definition1);

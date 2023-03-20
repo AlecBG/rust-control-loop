@@ -47,7 +47,13 @@ impl TaskRegistry for InMemoryTaskRegistry {
         }
     }
 
-    fn update_task_from_control_loop(&mut self, task_id: &str, status: TaskStatus) {}
+    fn update_task_from_control_loop(&mut self, task_id: &str, status: TaskStatus) {
+        let task_state = self.get_task(task_id).unwrap();
+        let mut new_task_state = task_state.clone();
+        new_task_state.status = status.clone();
+        self.tasks
+            .insert((&new_task_state.name).to_string(), new_task_state);
+    }
 
     fn create_task(self: &mut Self, task_id: &str, task_definition: &TaskDefinition) -> TaskState {
         let task_state = TaskState::new(task_id, task_definition);
