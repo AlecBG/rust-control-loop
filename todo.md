@@ -1,0 +1,5 @@
+- [ ] Make sqlite integration write to disk
+- [ ] parameterise registry unit tests so that in memory version is also tested
+- [ ] fill out control loop
+- [ ] implement API
+- [ ] Implement UI
