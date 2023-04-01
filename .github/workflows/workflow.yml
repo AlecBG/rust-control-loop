@@ -1,0 +1,16 @@
+name: ci
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build
+        run: |
+          # install cargo
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          export PATH=$HOME/.cargo/bin:$PATH
+          # check rust code compiles
+          cargo build
