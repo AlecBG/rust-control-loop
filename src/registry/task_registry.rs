@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::{self, Display};
 
-use crate::core::core_types::{TaskDefinition, TaskState, TaskStatus};
+use crate::core::core_types::{NewTaskInfo, TaskState, TaskStatus};
 
 #[derive(Debug, Clone)]
 pub struct TaskNotFoundError {
@@ -18,7 +18,7 @@ impl fmt::Display for TaskNotFoundError {
 pub trait TaskRegistry {
     fn get_task(self: &Self, task_id: &str) -> Result<TaskState, TaskNotFoundError>;
     fn update_task_from_control_loop(&mut self, task_id: &str, status: TaskStatus);
-    fn create_task(self: &mut Self, task_id: &str, task_definition: &TaskDefinition) -> TaskState;
+    fn create_task(self: &mut Self, new_task_info: &NewTaskInfo) -> TaskState;
     fn get_tasks<'a>(
         self: &'a Self,
         statuses: &'a HashSet<TaskStatus>,
@@ -55,11 +55,11 @@ impl TaskRegistry for InMemoryTaskRegistry {
             .insert((&new_task_state.name).to_string(), new_task_state);
     }
 
-    fn create_task(self: &mut Self, task_id: &str, task_definition: &TaskDefinition) -> TaskState {
-        let task_state = TaskState::new(task_id, task_definition);
+    fn create_task(self: &mut Self, new_task_info: &NewTaskInfo) -> TaskState {
+        let task_state = TaskState::new(new_task_info);
         self.tasks.insert(
-            task_id.to_string(),
-            TaskState::new(task_id, task_definition),
+            new_task_info.task_id.to_string(),
+            TaskState::new(new_task_info),
         );
         task_state
     }

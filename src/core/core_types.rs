@@ -4,6 +4,11 @@ use std::io::prelude::*;
 use std::thread;
 use std::time::Duration;
 
+pub struct NewTaskInfo {
+    pub task_id: String,
+    pub task_definition: TaskDefinition,
+}
+
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub enum TaskStatus {
     PENDING,
@@ -65,13 +70,13 @@ impl Display for TaskState {
 }
 
 impl TaskState {
-    pub fn new(task_name: &str, task_definition: &TaskDefinition) -> TaskState {
+    pub fn new(new_task_info: &NewTaskInfo) -> TaskState {
         TaskState {
             status: TaskStatus::PENDING,
-            name: task_name.to_string(),
-            sleep_time_seconds: task_definition.sleep_time_seconds,
-            message: task_definition.message.to_string(),
-            output_path: task_definition.output_path.to_string(),
+            name: new_task_info.task_id.to_string(),
+            sleep_time_seconds: new_task_info.task_definition.sleep_time_seconds,
+            message: new_task_info.task_definition.message.to_string(),
+            output_path: new_task_info.task_definition.output_path.to_string(),
         }
     }
 

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 
-use crate::core::core_types::{TaskState, TaskStatus};
+use crate::core::core_types::{NewTaskInfo, TaskState, TaskStatus};
 use crate::registry::task_registry::TaskRegistry;
 use crate::threadpool::threadpool::ThreadPool;
 
@@ -14,34 +14,52 @@ struct TaskInfo {
 pub struct ControlLoop<'a> {
     registry: &'a mut dyn TaskRegistry,
     threadpool: ThreadPool,
-    sender: Sender<TaskInfo>,
-    receiver: Receiver<TaskInfo>,
+    task_definition_receiver: Receiver<NewTaskInfo>,
+    running_task_sender: Sender<TaskInfo>,
+    running_task_receiver: Receiver<TaskInfo>,
 }
 
 impl ControlLoop<'_> {
-    pub fn new(registry: &mut dyn TaskRegistry) -> ControlLoop {
+    pub fn new(
+        registry: &mut dyn TaskRegistry,
+        task_definition_receiver: Receiver<NewTaskInfo>,
+    ) -> ControlLoop {
         let (sender, receiver) = mpsc::channel::<TaskInfo>();
         return ControlLoop {
             registry: registry,
             threadpool: ThreadPool::new(2),
-            sender,
-            receiver,
+            task_definition_receiver,
+            running_task_sender: sender,
+            running_task_receiver: receiver,
         };
     }
 
     pub fn run_once(&mut self) {
+        self.receive_new_tasks();
         for task in self
             .registry
             .get_tasks(&HashSet::from([TaskStatus::PENDING]))
         {
             self.trigger_pending(&task)
         }
-        self.advance();
+        self.advance_running();
+    }
+
+    fn receive_new_tasks(&mut self) {
+        let mut iterator = self.task_definition_receiver.try_iter();
+        loop {
+            let try_receiced_new_task_info = iterator.next();
+            if try_receiced_new_task_info.is_none() {
+                break;
+            }
+            self.registry
+                .create_task(&try_receiced_new_task_info.unwrap());
+        }
     }
 
     fn trigger_pending(&self, task: &TaskState) {
         assert_eq!(task.status, TaskStatus::PENDING);
-        let sender = (&self.sender).clone();
+        let sender = (&self.running_task_sender).clone();
         let cloned_task = task.clone();
         self.threadpool.execute(move || {
             sender
@@ -74,8 +92,8 @@ impl ControlLoop<'_> {
         });
     }
 
-    fn advance(&mut self) {
-        let mut iterator = self.receiver.try_iter();
+    fn advance_running(&mut self) {
+        let mut iterator = self.running_task_receiver.try_iter();
         loop {
             let try_received_task = iterator.next();
             if try_received_task.is_none() {

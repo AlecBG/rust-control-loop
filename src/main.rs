@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::sync::mpsc;
 
 use task_runner::control::control_loop::ControlLoop;
-use task_runner::core::core_types::TaskDefinition;
-use task_runner::registry::task_registry::{InMemoryTaskRegistry, TaskRegistry};
+use task_runner::core::core_types::{NewTaskInfo, TaskDefinition};
+use task_runner::registry::task_registry_sqlite::{TablePermanance, TaskRegistrySqlite};
 
 fn main() {
     let task1 = TaskDefinition {
@@ -15,10 +15,21 @@ fn main() {
         sleep_time_seconds: 6,
         output_path: "task2output".to_string(),
     };
-    let mut registry = InMemoryTaskRegistry::new(HashMap::new());
-    registry.create_task("Task 1", &task1);
-    registry.create_task("Task 2", &task2);
-    let mut control_loop = ControlLoop::new(&mut registry);
+
+    let mut registry =
+        TaskRegistrySqlite::new(":memory:", "test_table", TablePermanance::DropOnClose);
+    let (sender, receiver) = mpsc::channel::<NewTaskInfo>();
+    let new_task1 = NewTaskInfo {
+        task_id: "Task 1".to_string(),
+        task_definition: task1,
+    };
+    let new_task2 = NewTaskInfo {
+        task_id: "Task 2".to_string(),
+        task_definition: task2,
+    };
+    sender.send(new_task1).unwrap();
+    sender.send(new_task2).unwrap();
+    let mut control_loop = ControlLoop::new(&mut registry, receiver);
 
     let mut count = 0u32;
     loop {
