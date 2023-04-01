@@ -98,7 +98,7 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
         }
     }
 
-    fn update_task_from_control_loop(&mut self, task_id: &str, status: TaskStatus) {
+    fn update_task_from_control_loop(&self, task_id: &str, status: TaskStatus) {
         let table_name = &self.table_name;
         let query = format!("UPDATE {table_name} SET status = :status WHERE name = :name");
         let mut statement = self.connection.prepare(query).unwrap();
@@ -112,7 +112,7 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
         assert_eq!(state, sqlite::State::Done);
     }
 
-    fn create_task(self: &mut Self, new_task_info: &NewTaskInfo) -> TaskState {
+    fn create_task(&self, new_task_info: &NewTaskInfo) -> TaskState {
         let task_state = TaskState::new(new_task_info);
         let serialised_state = serialise_task_state(&task_state);
         let table_name = &self.table_name;
@@ -184,9 +184,9 @@ impl Drop for TaskRegistrySqlite {
 #[cfg(test)]
 mod tests {
     use crate::core::core_types::{NewTaskInfo, TaskDefinition, TaskState, TaskStatus};
-    use crate::registry::task_registry::{InMemoryTaskRegistry, TaskRegistry};
+    use crate::registry::task_registry::TaskRegistry;
     use crate::registry::task_registry_sqlite::{TablePermanance, TaskRegistrySqlite};
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
 
     use rstest::*;
 
@@ -196,7 +196,6 @@ mod tests {
     #[derive(PartialEq)]
     enum RegistryType {
         Sqlite,
-        InMemory,
     }
 
     fn make_registry(registry_type: RegistryType) -> Box<dyn TaskRegistry> {
@@ -205,14 +204,12 @@ mod tests {
                 TaskRegistrySqlite::new(DATABASE_NAME, TABLE_NAME, TablePermanance::DropOnClose);
             Box::new(registry)
         } else {
-            let registry = InMemoryTaskRegistry::new(HashMap::new());
-            Box::new(registry)
+            panic!("Unknown registry type")
         }
     }
 
     #[rstest]
     #[case(RegistryType::Sqlite)]
-    #[case(RegistryType::InMemory)]
     fn get_and_write_to_database(#[case] registry_type: RegistryType) {
         let mut registry_box = make_registry(registry_type);
         let registry = registry_box.as_mut();
@@ -256,7 +253,6 @@ mod tests {
 
     #[rstest]
     #[case(RegistryType::Sqlite)]
-    #[case(RegistryType::InMemory)]
     fn update_element_in_database(#[case] registry_type: RegistryType) {
         let mut registry_box = make_registry(registry_type);
         let registry = registry_box.as_mut();
@@ -279,7 +275,6 @@ mod tests {
 
     #[rstest]
     #[case(RegistryType::Sqlite)]
-    #[case(RegistryType::InMemory)]
     fn list_by_statuses(#[case] registry_type: RegistryType) {
         let mut registry_box = make_registry(registry_type);
         let registry = registry_box.as_mut();
