@@ -33,7 +33,6 @@ impl std::string::ToString for TaskStatus {
             TaskStatus::RUNNING => "RUNNING".to_string(),
             TaskStatus::FAILED => "FAILED".to_string(),
             TaskStatus::SUCCESS => "SUCCESS".to_string(),
-            _ => panic!("unknown status"),
         }
     }
 }
