@@ -1,5 +1,4 @@
 - [x] Make sqlite integration write to disk
-- [ ] make update_task_from_control_loop return Result<(), TaskNotFoundError>
 - [x] parameterise registry unit tests so that in memory version is also tested
 - [ ] fill out control loop
 - [ ] implement API
