@@ -6,7 +6,7 @@ use crate::registry::task_registry;
 
 use sqlite;
 
-type SerialisedTaskState = (String, String, i64, String);
+type SerialisedTaskState = (String, String, i64, String, String);
 
 fn serialise_task_state(task_state: &TaskState) -> SerialisedTaskState {
     (
@@ -14,15 +14,17 @@ fn serialise_task_state(task_state: &TaskState) -> SerialisedTaskState {
         task_state.name.to_string(),
         task_state.sleep_time_seconds as i64,
         task_state.message.to_string(),
+        task_state.output_path.to_string(),
     )
 }
 
-fn deserialise_task_state(serialise_task_state: SerialisedTaskState) -> TaskState {
+fn deserialise_task_state(serialised_task_state: SerialisedTaskState) -> TaskState {
     TaskState {
-        status: TaskStatus::from_str(&serialise_task_state.0).unwrap(),
-        name: serialise_task_state.1,
-        sleep_time_seconds: serialise_task_state.2 as u16,
-        message: serialise_task_state.3,
+        status: TaskStatus::from_str(&serialised_task_state.0).unwrap(),
+        name: serialised_task_state.1,
+        sleep_time_seconds: serialised_task_state.2 as u16,
+        message: serialised_task_state.3,
+        output_path: serialised_task_state.4,
     }
 }
 
@@ -61,7 +63,7 @@ impl TaskRegistrySqlite {
         table_permanence: TablePermanance,
     ) -> TaskRegistrySqlite {
         let table_name = table_name.to_string();
-        let query = format!("CREATE TABLE {table_name} (status TEXT, name TEXT PRIMARY KEY, sleep_time_seconds INTEGER, message TEXT);");
+        let query = format!("CREATE TABLE {table_name} (status TEXT, name TEXT PRIMARY KEY, sleep_time_seconds INTEGER, message TEXT, output_path TEXT);");
         let connection = sqlite::Connection::open(database).unwrap();
         connection.execute(query).unwrap();
         TaskRegistrySqlite {
@@ -86,6 +88,7 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
                 extract_string(&values[1]),
                 extract_i64(&values[2]),
                 extract_string(&values[3]),
+                extract_string(&values[4]),
             );
             Ok(deserialise_task_state(serialised_task_state))
         } else {
@@ -114,7 +117,7 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
         let serialised_state = serialise_task_state(&task_state);
         let table_name = &self.table_name;
         let query = format!(
-            "INSERT INTO {table_name}  VALUES (:status, :name, :sleep_time_seconds, :message) "
+            "INSERT INTO {table_name}  VALUES (:status, :name, :sleep_time_seconds, :message, :output_path) "
         );
         let mut statement = self.connection.prepare(query).unwrap();
         statement
@@ -123,6 +126,7 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
                 (":name", serialised_state.1.into()),
                 (":sleep_time_seconds", serialised_state.2.into()),
                 (":message", serialised_state.3.into()),
+                (":output_path", serialised_state.4.into()),
             ])
             .unwrap();
         let state = statement.next().unwrap();
@@ -157,6 +161,7 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
                 extract_string(&values[1]),
                 extract_i64(&values[2]),
                 extract_string(&values[3]),
+                extract_string(&values[4]),
             );
             deserialise_task_state(serialised_task_state)
         });
@@ -214,10 +219,12 @@ mod tests {
         let task_definition1 = TaskDefinition {
             message: "hello from task 1".to_string(),
             sleep_time_seconds: 4,
+            output_path: "dummy-path".to_string(),
         };
         let task_definition2 = TaskDefinition {
             message: "hello from task 2".to_string(),
             sleep_time_seconds: 6,
+            output_path: "dummy-path".to_string(),
         };
         let task1_id = "Task 1";
         let task2_id = "Task 2";
@@ -238,6 +245,7 @@ mod tests {
         let task_definition = TaskDefinition {
             message: "hello from task 1".to_string(),
             sleep_time_seconds: 4,
+            output_path: "dummy-path".to_string(),
         };
         let task_id = "my task";
         registry.create_task(task_id, &task_definition);
@@ -257,10 +265,12 @@ mod tests {
         let task_definition1 = TaskDefinition {
             message: "hello from task 1".to_string(),
             sleep_time_seconds: 4,
+            output_path: "dummy-path".to_string(),
         };
         let task_definition2 = TaskDefinition {
             message: "hello from task 2".to_string(),
             sleep_time_seconds: 6,
+            output_path: "dummy-path".to_string(),
         };
         let task1_id = "Task 1";
         let task2_id = "Task 2";
