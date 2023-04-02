@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::str::FromStr;
 
-use crate::core::core_types::{TaskDefinition, TaskState, TaskStatus};
+use crate::core::core_types::{NewTaskInfo, TaskState, TaskStatus};
 use crate::registry::task_registry;
 
 use sqlite;
@@ -63,7 +63,7 @@ impl TaskRegistrySqlite {
         table_permanence: TablePermanance,
     ) -> TaskRegistrySqlite {
         let table_name = table_name.to_string();
-        let query = format!("CREATE TABLE {table_name} (status TEXT, name TEXT PRIMARY KEY, sleep_time_seconds INTEGER, message TEXT, output_path TEXT);");
+        let query = format!("CREATE TABLE IF NOT EXISTS {table_name} (status TEXT, name TEXT PRIMARY KEY, sleep_time_seconds INTEGER, message TEXT, output_path TEXT);");
         let connection = sqlite::Connection::open(database).unwrap();
         connection.execute(query).unwrap();
         TaskRegistrySqlite {
@@ -98,7 +98,7 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
         }
     }
 
-    fn update_task_from_control_loop(&mut self, task_id: &str, status: TaskStatus) {
+    fn update_task_from_control_loop(&self, task_id: &str, status: TaskStatus) {
         let table_name = &self.table_name;
         let query = format!("UPDATE {table_name} SET status = :status WHERE name = :name");
         let mut statement = self.connection.prepare(query).unwrap();
@@ -112,8 +112,8 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
         assert_eq!(state, sqlite::State::Done);
     }
 
-    fn create_task(self: &mut Self, task_id: &str, task_definition: &TaskDefinition) -> TaskState {
-        let task_state = TaskState::new(task_id, task_definition);
+    fn create_task(&self, new_task_info: &NewTaskInfo) -> TaskState {
+        let task_state = TaskState::new(new_task_info);
         let serialised_state = serialise_task_state(&task_state);
         let table_name = &self.table_name;
         let query = format!(
@@ -183,10 +183,10 @@ impl Drop for TaskRegistrySqlite {
 
 #[cfg(test)]
 mod tests {
-    use crate::core::core_types::{TaskDefinition, TaskState, TaskStatus};
-    use crate::registry::task_registry::{InMemoryTaskRegistry, TaskRegistry};
+    use crate::core::core_types::{NewTaskInfo, TaskDefinition, TaskState, TaskStatus};
+    use crate::registry::task_registry::TaskRegistry;
     use crate::registry::task_registry_sqlite::{TablePermanance, TaskRegistrySqlite};
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
 
     use rstest::*;
 
@@ -196,7 +196,6 @@ mod tests {
     #[derive(PartialEq)]
     enum RegistryType {
         Sqlite,
-        InMemory,
     }
 
     fn make_registry(registry_type: RegistryType) -> Box<dyn TaskRegistry> {
@@ -205,14 +204,12 @@ mod tests {
                 TaskRegistrySqlite::new(DATABASE_NAME, TABLE_NAME, TablePermanance::DropOnClose);
             Box::new(registry)
         } else {
-            let registry = InMemoryTaskRegistry::new(HashMap::new());
-            Box::new(registry)
+            panic!("Unknown registry type")
         }
     }
 
     #[rstest]
     #[case(RegistryType::Sqlite)]
-    #[case(RegistryType::InMemory)]
     fn get_and_write_to_database(#[case] registry_type: RegistryType) {
         let mut registry_box = make_registry(registry_type);
         let registry = registry_box.as_mut();
@@ -228,17 +225,34 @@ mod tests {
         };
         let task1_id = "Task 1";
         let task2_id = "Task 2";
-        registry.create_task(task1_id, &task_definition1);
-        registry.create_task(task2_id, &task_definition2);
+        registry.create_task(&NewTaskInfo {
+            task_id: task1_id.to_string(),
+            task_definition: task_definition1.clone(),
+        });
+        registry.create_task(&NewTaskInfo {
+            task_id: task2_id.to_string(),
+            task_definition: task_definition2.clone(),
+        });
         let retrieved_task1 = registry.get_task(task1_id).unwrap();
         let retrieved_task2 = registry.get_task(task2_id).unwrap();
-        assert_eq!(TaskState::new(task1_id, &task_definition1), retrieved_task1);
-        assert_eq!(TaskState::new(task2_id, &task_definition2), retrieved_task2);
+        assert_eq!(
+            TaskState::new(&NewTaskInfo {
+                task_id: task1_id.to_string(),
+                task_definition: task_definition1
+            }),
+            retrieved_task1
+        );
+        assert_eq!(
+            TaskState::new(&NewTaskInfo {
+                task_id: task2_id.to_string(),
+                task_definition: task_definition2
+            }),
+            retrieved_task2
+        );
     }
 
     #[rstest]
     #[case(RegistryType::Sqlite)]
-    #[case(RegistryType::InMemory)]
     fn update_element_in_database(#[case] registry_type: RegistryType) {
         let mut registry_box = make_registry(registry_type);
         let registry = registry_box.as_mut();
@@ -248,7 +262,10 @@ mod tests {
             output_path: "dummy-path".to_string(),
         };
         let task_id = "my task";
-        registry.create_task(task_id, &task_definition);
+        registry.create_task(&NewTaskInfo {
+            task_id: task_id.to_string(),
+            task_definition: task_definition,
+        });
         let retrieved_task = registry.get_task(task_id).unwrap();
         assert_eq!(retrieved_task.status, TaskStatus::PENDING);
         registry.update_task_from_control_loop(task_id, TaskStatus::RUNNING);
@@ -258,7 +275,6 @@ mod tests {
 
     #[rstest]
     #[case(RegistryType::Sqlite)]
-    #[case(RegistryType::InMemory)]
     fn list_by_statuses(#[case] registry_type: RegistryType) {
         let mut registry_box = make_registry(registry_type);
         let registry = registry_box.as_mut();
@@ -274,16 +290,28 @@ mod tests {
         };
         let task1_id = "Task 1";
         let task2_id = "Task 2";
-        registry.create_task(task1_id, &task_definition1);
-        registry.create_task(task2_id, &task_definition2);
+        registry.create_task(&NewTaskInfo {
+            task_id: task1_id.to_string(),
+            task_definition: task_definition1.clone(),
+        });
+        registry.create_task(&NewTaskInfo {
+            task_id: task2_id.to_string(),
+            task_definition: task_definition2.clone(),
+        });
         let mut statuses = HashSet::new();
         statuses.insert(TaskStatus::PENDING);
         let tasks_iter = registry.get_tasks(&statuses);
         let mut tasks = Vec::from_iter(tasks_iter);
         tasks.sort_by(|a, b| a.name.to_string().cmp(&b.name));
         let expected_tasks = vec![
-            TaskState::new(task1_id, &task_definition1),
-            TaskState::new(task2_id, &task_definition2),
+            TaskState::new(&NewTaskInfo {
+                task_id: task1_id.to_string(),
+                task_definition: task_definition1,
+            }),
+            TaskState::new(&NewTaskInfo {
+                task_id: task2_id.to_string(),
+                task_definition: task_definition2,
+            }),
         ];
         assert_eq!(tasks, expected_tasks);
     }

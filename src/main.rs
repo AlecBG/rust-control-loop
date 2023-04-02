@@ -1,38 +1,57 @@
-use std::collections::HashMap;
-
+use actix_web::web::Data;
+use actix_web::{get, web, App, HttpServer, Responder};
+use std::sync::mpsc;
+use task_runner::control::control_api::{add_task, get_task, ControlApi};
 use task_runner::control::control_loop::ControlLoop;
-use task_runner::core::core_types::TaskDefinition;
-use task_runner::registry::task_registry::{InMemoryTaskRegistry, TaskRegistry};
+use task_runner::core::core_types::NewTaskInfo;
+use task_runner::registry::task_registry::TaskRegistry;
+use task_runner::registry::task_registry_sqlite::{TablePermanance, TaskRegistrySqlite};
+
+const DATABASE_NAME: &str = "test.db";
+
+#[get("/hello/{name}")]
+async fn greet(name: web::Path<String>) -> impl Responder {
+    format!("Hello {name}!")
+}
+
+fn registry_factory() -> Box<dyn TaskRegistry> {
+    Box::new(TaskRegistrySqlite::new(
+        DATABASE_NAME,
+        "test_table",
+        TablePermanance::DropOnClose,
+    ))
+}
+
+#[actix_web::main]
+async fn server_main(sender: mpsc::Sender<NewTaskInfo>) -> std::io::Result<()> {
+    HttpServer::new(move || {
+        let control_api = ControlApi::new(sender.clone(), registry_factory);
+        let data = Data::new(control_api);
+        App::new()
+            .app_data(data.clone())
+            .service(add_task)
+            .service(get_task)
+    })
+    .bind(("localhost", 8080))?
+    .run()
+    .await
+}
 
 fn main() {
-    let task1 = TaskDefinition {
-        message: "hello from task1".to_string(),
-        sleep_time_seconds: 4,
-        output_path: "task1output".to_string(),
-    };
-    let task2 = TaskDefinition {
-        message: "hello from task2".to_string(),
-        sleep_time_seconds: 6,
-        output_path: "task2output".to_string(),
-    };
-    let mut registry = InMemoryTaskRegistry::new(HashMap::new());
-    registry.create_task("Task 1", &task1);
-    registry.create_task("Task 2", &task2);
-    let mut control_loop = ControlLoop::new(&mut registry);
+    let (sender, receiver) = mpsc::channel::<NewTaskInfo>();
 
-    let mut count = 0u32;
-    loop {
-        count += 1;
-        println!(
-            "----------\nRunning control loop count {}\n----------",
-            count
-        );
+    // Run server in background thread
+    let server_handle = std::thread::spawn(move || {
+        server_main(sender.clone()).unwrap();
+    });
+    // Run control loop for two minutes
+    let registry =
+        TaskRegistrySqlite::new(DATABASE_NAME, "test_table", TablePermanance::DropOnClose);
+    let mut control_loop = ControlLoop::new(&registry, receiver);
+    for _ in 0..120 {
         control_loop.run_once();
-        std::thread::sleep(std::time::Duration::from_secs(2));
-
-        if count == 10 {
-            break;
-        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
-    println!("All done!");
+    // Stop server
+    server_handle.join().unwrap();
 }
