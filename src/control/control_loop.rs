@@ -12,7 +12,7 @@ struct TaskInfo {
 }
 
 pub struct ControlLoop<'a> {
-    registry: &'a mut dyn TaskRegistry,
+    registry: &'a dyn TaskRegistry,
     threadpool: ThreadPool,
     task_definition_receiver: Receiver<NewTaskInfo>,
     running_task_sender: Sender<TaskInfo>,
@@ -21,7 +21,7 @@ pub struct ControlLoop<'a> {
 
 impl ControlLoop<'_> {
     pub fn new(
-        registry: &mut dyn TaskRegistry,
+        registry: &dyn TaskRegistry,
         task_definition_receiver: Receiver<NewTaskInfo>,
     ) -> ControlLoop {
         let (sender, receiver) = mpsc::channel::<TaskInfo>();

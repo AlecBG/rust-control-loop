@@ -4,12 +4,14 @@ use std::io::prelude::*;
 use std::thread;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
+
 pub struct NewTaskInfo {
     pub task_id: String,
     pub task_definition: TaskDefinition,
 }
 
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub enum TaskStatus {
     PENDING,
     RUNNING,

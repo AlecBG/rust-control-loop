@@ -63,7 +63,7 @@ impl TaskRegistrySqlite {
         table_permanence: TablePermanance,
     ) -> TaskRegistrySqlite {
         let table_name = table_name.to_string();
-        let query = format!("CREATE TABLE {table_name} (status TEXT, name TEXT PRIMARY KEY, sleep_time_seconds INTEGER, message TEXT, output_path TEXT);");
+        let query = format!("CREATE TABLE IF NOT EXISTS {table_name} (status TEXT, name TEXT PRIMARY KEY, sleep_time_seconds INTEGER, message TEXT, output_path TEXT);");
         let connection = sqlite::Connection::open(database).unwrap();
         connection.execute(query).unwrap();
         TaskRegistrySqlite {
