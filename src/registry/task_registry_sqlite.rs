@@ -112,7 +112,10 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
         assert_eq!(state, sqlite::State::Done);
     }
 
-    fn create_task(&self, new_task_info: &NewTaskInfo) -> TaskState {
+    fn create_task(
+        &self,
+        new_task_info: &NewTaskInfo,
+    ) -> Result<TaskState, task_registry::TaskAlreadyExistsError> {
         let task_state = TaskState::new(new_task_info);
         let serialised_state = serialise_task_state(&task_state);
         let table_name = &self.table_name;
@@ -129,9 +132,20 @@ impl task_registry::TaskRegistry for TaskRegistrySqlite {
                 (":output_path", serialised_state.4.into()),
             ])
             .unwrap();
-        let state = statement.next().unwrap();
-        assert_eq!(state, sqlite::State::Done);
-        task_state
+        let state_result = statement.next();
+
+        if let Err(error) = &state_result {
+            if let Some(message) = &error.message {
+                if message.contains("UNIQUE constraint failed") {
+                    return Err(task_registry::TaskAlreadyExistsError {
+                        task_id: task_state.name.to_string(),
+                    });
+                }
+            }
+        }
+
+        assert_eq!(state_result.unwrap(), sqlite::State::Done);
+        Ok(task_state)
     }
 
     fn get_tasks<'a>(
@@ -184,7 +198,7 @@ impl Drop for TaskRegistrySqlite {
 #[cfg(test)]
 mod tests {
     use crate::core::core_types::{NewTaskInfo, TaskDefinition, TaskState, TaskStatus};
-    use crate::registry::task_registry::TaskRegistry;
+    use crate::registry::task_registry::{TaskAlreadyExistsError, TaskRegistry};
     use crate::registry::task_registry_sqlite::{TablePermanance, TaskRegistrySqlite};
     use std::collections::HashSet;
 
@@ -225,14 +239,18 @@ mod tests {
         };
         let task1_id = "Task 1";
         let task2_id = "Task 2";
-        registry.create_task(&NewTaskInfo {
-            task_id: task1_id.to_string(),
-            task_definition: task_definition1.clone(),
-        });
-        registry.create_task(&NewTaskInfo {
-            task_id: task2_id.to_string(),
-            task_definition: task_definition2.clone(),
-        });
+        registry
+            .create_task(&NewTaskInfo {
+                task_id: task1_id.to_string(),
+                task_definition: task_definition1.clone(),
+            })
+            .unwrap();
+        registry
+            .create_task(&NewTaskInfo {
+                task_id: task2_id.to_string(),
+                task_definition: task_definition2.clone(),
+            })
+            .unwrap();
         let retrieved_task1 = registry.get_task(task1_id).unwrap();
         let retrieved_task2 = registry.get_task(task2_id).unwrap();
         assert_eq!(
@@ -253,6 +271,33 @@ mod tests {
 
     #[rstest]
     #[case(RegistryType::Sqlite)]
+    fn create_task_twice_gives_error(#[case] registry_type: RegistryType) {
+        let mut registry_box = make_registry(registry_type);
+        let registry = registry_box.as_mut();
+        let task_definition1 = TaskDefinition {
+            message: "hello from task 1".to_string(),
+            sleep_time_seconds: 4,
+            output_path: "dummy-path".to_string(),
+        };
+        let task1_id = "Task 1";
+        registry
+            .create_task(&NewTaskInfo {
+                task_id: task1_id.to_string(),
+                task_definition: task_definition1.clone(),
+            })
+            .unwrap();
+        let result = registry.create_task(&NewTaskInfo {
+            task_id: task1_id.to_string(),
+            task_definition: task_definition1.clone(),
+        });
+        let expected = Err(TaskAlreadyExistsError {
+            task_id: task1_id.to_string(),
+        });
+        assert_eq!(expected, result);
+    }
+
+    #[rstest]
+    #[case(RegistryType::Sqlite)]
     fn update_element_in_database(#[case] registry_type: RegistryType) {
         let mut registry_box = make_registry(registry_type);
         let registry = registry_box.as_mut();
@@ -262,10 +307,12 @@ mod tests {
             output_path: "dummy-path".to_string(),
         };
         let task_id = "my task";
-        registry.create_task(&NewTaskInfo {
-            task_id: task_id.to_string(),
-            task_definition: task_definition,
-        });
+        registry
+            .create_task(&NewTaskInfo {
+                task_id: task_id.to_string(),
+                task_definition: task_definition,
+            })
+            .unwrap();
         let retrieved_task = registry.get_task(task_id).unwrap();
         assert_eq!(retrieved_task.status, TaskStatus::PENDING);
         registry.update_task_from_control_loop(task_id, TaskStatus::RUNNING);
@@ -290,14 +337,18 @@ mod tests {
         };
         let task1_id = "Task 1";
         let task2_id = "Task 2";
-        registry.create_task(&NewTaskInfo {
-            task_id: task1_id.to_string(),
-            task_definition: task_definition1.clone(),
-        });
-        registry.create_task(&NewTaskInfo {
-            task_id: task2_id.to_string(),
-            task_definition: task_definition2.clone(),
-        });
+        registry
+            .create_task(&NewTaskInfo {
+                task_id: task1_id.to_string(),
+                task_definition: task_definition1.clone(),
+            })
+            .unwrap();
+        registry
+            .create_task(&NewTaskInfo {
+                task_id: task2_id.to_string(),
+                task_definition: task_definition2.clone(),
+            })
+            .unwrap();
         let mut statuses = HashSet::new();
         statuses.insert(TaskStatus::PENDING);
         let tasks_iter = registry.get_tasks(&statuses);

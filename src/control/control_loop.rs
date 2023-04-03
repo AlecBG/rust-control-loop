@@ -36,24 +36,23 @@ impl ControlLoop<'_> {
 
     pub fn run_once(&mut self) {
         self.receive_new_tasks();
-        for task in self
-            .registry
-            .get_tasks(&HashSet::from([TaskStatus::PENDING]))
-        {
-            self.trigger_pending(&task)
-        }
         self.advance_running();
     }
 
-    fn receive_new_tasks(&mut self) {
+    fn receive_new_tasks(&self) {
         let mut iterator = self.task_definition_receiver.try_iter();
         loop {
-            let try_receiced_new_task_info = iterator.next();
-            if try_receiced_new_task_info.is_none() {
+            let try_received_new_task_info = iterator.next();
+            if try_received_new_task_info.is_none() {
                 break;
             }
-            self.registry
-                .create_task(&try_receiced_new_task_info.unwrap());
+            let new_task_info = try_received_new_task_info.unwrap();
+            let result = self.registry.create_task(&new_task_info);
+            if let Err(_) = &result {
+                println!("Task already exists: {}", &new_task_info.task_id);
+                continue;
+            }
+            self.trigger_pending(&result.unwrap());
         }
     }
 
